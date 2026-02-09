@@ -11699,6 +11699,7 @@ GameObject:
   - component: {fileID: 303037611}
   - component: {fileID: 303037610}
   - component: {fileID: 303037616}
+  - component: {fileID: 303037617}
   m_Layer: 6
   m_Name: Player
   m_TagString: Player
@@ -11967,6 +11968,9 @@ MonoBehaviour:
   _lowJumpFactor: 10
   _jumpBuffer: 0.15
   _coyoteTime: 0.25
+  _airControlMultiplier: 0.5
+  _maxSlopeAngle: 45
+  _groundSnapDistance: 0.1
   OnJump:
     m_PersistentCalls:
       m_Calls: []
@@ -12067,6 +12071,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CharacterControllerInput
   _controller: {fileID: 303037612}
   _adjustInputsToCameraAngle: 1
+--- !u!114 &303037617
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 303037609}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 335abc4ca30e840189dab923f5641062, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PhysicsBasedCharacterControllerVisualizer
+  showVisualization: 1
+  showBasicInfo: 1
+  showAdvancedInfo: 1
 --- !u!43 &309454691
 Mesh:
   m_ObjectHideFlags: 0
