@@ -8,15 +8,39 @@ using UnityEngine.Events;
 /// </summary>
 public class PhysicsBasedCharacterController : MonoBehaviour
 {
+    // Constants
+    private const float GROUNDED_DISTANCE_TOLERANCE = 1.3f; // Allows for greater leniency as the value oscillates about the rideHeight
+    private const float JUMP_RESET_TIME = 0.2f; // Time after landing before jump state resets
+
+    // Core components
     private Rigidbody _rb;
     private Vector3 _gravitationalForce;
     private Vector3 _rayDir = Vector3.down;
+
+    // State variables
     private Vector3 _previousVelocity = Vector3.zero;
+    private Vector3 _moveInput;
+    private Vector3 _jumpInput;
+    private Vector3 _goalVelocity = Vector3.zero;
+    private float _speedFactor = 1f;
+    private float _maxAccelForceFactor = 1f;
+    private float _timeSinceJumpPressed = 0f;
+    private float _timeSinceUngrounded = 0f;
+    private float _timeSinceJump = 0f;
+    private bool _shouldMaintainHeight = true;
+    private bool _jumpReady = true;
+    private bool _isJumping = false;
+    private bool _prevGrounded = false;
+
+    // Rotation state
+    private enum lookDirectionOptions { velocity, acceleration, moveInput };
+    private Quaternion _uprightTargetRot = Quaternion.identity;
+    private Quaternion _lastTargetRot;
+    private Vector3 _platformInitRot;
+    private bool didLastRayHit;
 
     [Header("Other:")]
     [SerializeField] private LayerMask _terrainLayer;
-
-    private bool _shouldMaintainHeight = true;
 
     [Header("Height Spring:")]
     [SerializeField] private float _rideHeight = 1.75f; // rideHeight: desired distance to ground (Note, this is distance from the original raycast position (currently centre of transform)). 
@@ -25,21 +49,10 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     [SerializeField] private float _rideSpringDamper = 5f; // rideSpringDampener: dampener of spring. (?)
     [SerializeField] private Oscillator _squashAndStretchOcillator;
 
-    private enum lookDirectionOptions { velocity, acceleration, moveInput };
-    private Quaternion _uprightTargetRot = Quaternion.identity; // Adjust y value to match the desired direction to face.
-    private Quaternion _lastTargetRot;
-    private Vector3 _platformInitRot;
-    private bool didLastRayHit;
-
     [Header("Upright Spring:")]
     [SerializeField] private lookDirectionOptions _characterLookDirection = lookDirectionOptions.velocity;
     [SerializeField] private float _uprightSpringStrength = 40f;
     [SerializeField] private float _uprightSpringDamper = 5f;
-
-    private Vector3 _moveInput;
-    private float _speedFactor = 1f;
-    private float _maxAccelForceFactor = 1f;
-    private Vector3 _m_GoalVel = Vector3.zero;
 
     [Header("Movement:")]
     [SerializeField] private float _maxSpeed = 8f;
@@ -49,13 +62,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     [SerializeField] private AnimationCurve _accelerationFactorFromDot;
     [SerializeField] private AnimationCurve _maxAccelerationForceFactorFromDot;
     [SerializeField] private Vector3 _moveForceScale = new Vector3(1f, 0f, 1f);
-
-    private Vector3 _jumpInput;
-    private float _timeSinceJumpPressed = 0f;
-    private float _timeSinceUngrounded = 0f;
-    private float _timeSinceJump = 0f;
-    private bool _jumpReady = true;
-    private bool _isJumping = false;
 
     [Header("Jump:")]
     [SerializeField] private float _jumpForceFactor = 10f;
@@ -114,6 +120,11 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     private void Start()
     {
         _rb = GetComponent<Rigidbody>();
+        if (_rb == null)
+        {
+            Debug.LogError("PhysicsBasedCharacterController: Rigidbody component not found!", this);
+            return;
+        }
         _gravitationalForce = Physics.gravity * _rb.mass;
     }
 
@@ -125,16 +136,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     /// <returns>Whether or not the player is considered grounded.</returns>
     private bool CheckIfGrounded(bool rayHitGround, RaycastHit rayHit)
     {
-        bool grounded;
-        if (rayHitGround == true)
-        {
-            grounded = rayHit.distance <= _rideHeight * 1.3f; // 1.3f allows for greater leniancy (as the value will oscillate about the rideHeight).
-        }
-        else
-        {
-            grounded = false;
-        }
-        return grounded;
+        return rayHitGround && rayHit.distance <= _rideHeight * GROUNDED_DISTANCE_TOLERANCE;
     }
 
     /// <summary>
@@ -169,7 +171,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         return lookDirection;
     }
 
-    private bool _prevGrounded = false;
     /// <summary>
     /// Determines and triggers events, then calls the appropriate methods to move and float the character.
     /// </summary>
@@ -179,9 +180,9 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         SetPlatform(rayHit);
 
         bool grounded = CheckIfGrounded(rayHitGround, rayHit);
-        if (grounded == true)
+        if (grounded)
         {
-            if (_prevGrounded == false)
+            if (!_prevGrounded)
             {
                 OnLand?.Invoke();
             }
@@ -189,14 +190,14 @@ public class PhysicsBasedCharacterController : MonoBehaviour
             OnGrounded?.Invoke();
             _timeSinceUngrounded = 0f;
 
-            if (_timeSinceJump > 0.2f)
+            if (_timeSinceJump > JUMP_RESET_TIME)
             {
                 _isJumping = false;
             }
         }
         else
         {
-            if (_prevGrounded == true)
+            if (_prevGrounded)
             {
                 OnUngrounded?.Invoke();
             }
@@ -254,7 +255,12 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         Vector3 maintainHeightForce = - _gravitationalForce + springForce * Vector3.down;
         Vector3 oscillationForce = springForce * Vector3.down;
         _rb.AddForce(maintainHeightForce);
-        _squashAndStretchOcillator.ApplyForce(oscillationForce);
+
+        // Apply force to squash and stretch oscillator if available
+        if (_squashAndStretchOcillator != null)
+        {
+            _squashAndStretchOcillator.ApplyForce(oscillationForce);
+        }
 
         // Apply force to objects beneath
         if (hitBody != null)
@@ -273,49 +279,39 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         if (didLastRayHit)
         {
             _lastTargetRot = _uprightTargetRot;
-            try
+            if (transform.parent != null)
             {
                 _platformInitRot = transform.parent.rotation.eulerAngles;
             }
-            catch
+            else
             {
                 _platformInitRot = Vector3.zero;
             }
         }
-        if (rayHit.rigidbody == null)
-        {
-            didLastRayHit = true;
-        }
-        else
-        {
-            didLastRayHit = false;
-        }
+        
+        didLastRayHit = (rayHit.rigidbody == null);
 
         if (yLookAt != Vector3.zero)
         {
             _uprightTargetRot = Quaternion.LookRotation(yLookAt, Vector3.up);
             _lastTargetRot = _uprightTargetRot;
-            try
+            if (transform.parent != null)
             {
                 _platformInitRot = transform.parent.rotation.eulerAngles;
             }
-            catch
+            else
             {
                 _platformInitRot = Vector3.zero;
             }
         }
         else
         {
-            try
+            if (transform.parent != null)
             {
                 Vector3 platformRot = transform.parent.rotation.eulerAngles;
                 Vector3 deltaPlatformRot = platformRot - _platformInitRot;
                 float yAngle = _lastTargetRot.eulerAngles.y + deltaPlatformRot.y;
                 _uprightTargetRot = Quaternion.Euler(new Vector3(0f, yAngle, 0f));
-            }
-            catch
-            {
-
             }
         }
     }
@@ -350,16 +346,16 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     /// <param name="rayHit">The rayHit towards the platform.</param>
     private void SetPlatform(RaycastHit rayHit)
     {
-        try
+        if (rayHit.transform != null)
         {
             RigidPlatform rigidPlatform = rayHit.transform.GetComponent<RigidPlatform>();
-            RigidParent rigidParent = rigidPlatform.rigidParent;
-            transform.SetParent(rigidParent.transform);
+            if (rigidPlatform != null && rigidPlatform.rigidParent != null)
+            {
+                transform.SetParent(rigidPlatform.rigidParent.transform);
+                return;
+            }
         }
-        catch
-        {
-            transform.SetParent(null);
-        }
+        transform.SetParent(null);
     }
 
     /// <summary>
@@ -369,24 +365,26 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     /// <param name="rayHit">The rayHit towards the platform.</param>
     private void CharacterMove(Vector3 moveInput, RaycastHit rayHit)
     {
-        Vector3 m_UnitGoal = moveInput;
-        Vector3 unitVel = _m_GoalVel.normalized;
-        float velDot = Vector3.Dot(m_UnitGoal, unitVel);
+        Vector3 unitGoal = moveInput;
+        Vector3 unitVel = _goalVelocity.normalized;
+        float velDot = Vector3.Dot(unitGoal, unitVel);
         float accel = _acceleration * _accelerationFactorFromDot.Evaluate(velDot);
-        Vector3 goalVel = m_UnitGoal * _maxSpeed * _speedFactor;
-        Vector3 otherVel = Vector3.zero;
-        Rigidbody hitBody = rayHit.rigidbody;
-        _m_GoalVel = Vector3.MoveTowards(_m_GoalVel,
+        Vector3 goalVel = unitGoal * _maxSpeed * _speedFactor;
+        
+        _goalVelocity = Vector3.MoveTowards(_goalVelocity,
                                         goalVel,
                                         accel * Time.fixedDeltaTime);
-        Vector3 neededAccel = (_m_GoalVel - _rb.linearVelocity) / Time.fixedDeltaTime;
+        Vector3 neededAccel = (_goalVelocity - _rb.linearVelocity) / Time.fixedDeltaTime;
         float maxAccel = _maxAccelForce * _maxAccelerationForceFactorFromDot.Evaluate(velDot) * _maxAccelForceFactor;
         neededAccel = Vector3.ClampMagnitude(neededAccel, maxAccel);
-        _rb.AddForceAtPosition(Vector3.Scale(neededAccel * _rb.mass, _moveForceScale), transform.position + new Vector3(0f, transform.localScale.y * _leanFactor, 0f)); // Using AddForceAtPosition in order to both move the player and cause the play to lean in the direction of input.
+        // Using AddForceAtPosition to both move the player and cause the player to lean in the direction of input
+        _rb.AddForceAtPosition(Vector3.Scale(neededAccel * _rb.mass, _moveForceScale), transform.position + new Vector3(0f, transform.localScale.y * _leanFactor, 0f));
     }
 
     /// <summary>
     /// Apply force to cause the character to perform a single jump, including coyote time and a jump input buffer.
+    /// Jump mechanics: Resets vertical velocity to ensure consistent jump height regardless of initial velocity.
+    /// Adjusts position to ride height if raycast hit to maintain proper jump start position.
     /// </summary>
     /// <param name="jumpInput">The player jump input.</param>
     /// <param name="grounded">Whether or not the player is considered grounded.</param>
@@ -395,6 +393,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     {
         _timeSinceJumpPressed += Time.fixedDeltaTime;
         _timeSinceJump += Time.fixedDeltaTime;
+        
         if (_rb.linearVelocity.y < 0)
         {
             _shouldMaintainHeight = true;
@@ -402,7 +401,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
             if (!grounded)
             {
                 // Increase downforce for a sudden plummet.
-                _rb.AddForce(_gravitationalForce * (_fallGravityFactor - 1f)); // Hmm... this feels a bit weird. I want a reactive jump, but I don't want it to dive all the time...
+                _rb.AddForce(_gravitationalForce * (_fallGravityFactor - 1f));
             }
         }
         else if (_rb.linearVelocity.y > 0)
@@ -430,13 +429,18 @@ public class PhysicsBasedCharacterController : MonoBehaviour
                     _jumpReady = false;
                     _shouldMaintainHeight = false;
                     _isJumping = true;
-                    _rb.linearVelocity = new Vector3(_rb.linearVelocity.x, 0f, _rb.linearVelocity.z); // Cheat fix... (see comment below when adding force to rigidbody).
-                    if (rayHit.distance != 0) // i.e. if the ray has hit
+                    
+                    // Reset vertical velocity to ensure consistent jump height
+                    _rb.linearVelocity = new Vector3(_rb.linearVelocity.x, 0f, _rb.linearVelocity.z);
+                    
+                    // Adjust position to ride height if raycast hit to maintain proper jump start position
+                    if (rayHit.distance != 0)
                     {
                         _rb.position = new Vector3(_rb.position.x, _rb.position.y - (rayHit.distance - _rideHeight), _rb.position.z);
                     }
-                    _rb.AddForce(Vector3.up * _jumpForceFactor, ForceMode.Impulse); // This does not work very consistently... Jump height is affected by initial y velocity and y position relative to RideHeight... Want to adopt a fancier approach (more like PlayerMovement). A cheat fix to ensure consistency has been issued above...
-                    _timeSinceJumpPressed = _jumpBuffer; // So as to not activate further jumps, in the case that the player lands before the jump timer surpasses the buffer.
+                    
+                    _rb.AddForce(Vector3.up * _jumpForceFactor, ForceMode.Impulse);
+                    _timeSinceJumpPressed = _jumpBuffer; // Prevent further jumps if player lands before jump timer exceeds buffer
                     _timeSinceJump = 0f;
 
                     OnJump?.Invoke();
