@@ -1,4 +1,4 @@
-﻿//
+//
 // ProjectorForSRP.cs
 //
 // Projector For SRP
@@ -971,10 +971,12 @@ namespace ProjectorForSRP
 		{
 			bool isGameCamera = (camera.cameraType == CameraType.Game || camera.cameraType == CameraType.VR);
 			bool isCompatWithXRDimension = true;
+			bool isXREnabled = false;
 #if ENABLE_VR && ENABLE_VR_MODULE
-            isCompatWithXRDimension &= (camera.targetTexture ? camera.targetTexture.dimension == UnityEngine.XR.XRSettings.deviceEyeTextureDimension : true);
+			isCompatWithXRDimension &= (camera.targetTexture ? camera.targetTexture.dimension == UnityEngine.XR.XRSettings.deviceEyeTextureDimension : true);
+			isXREnabled = UnityEngine.XR.XRGraphics.enabled;
 #endif
-			return XRGraphics.enabled && isGameCamera && (camera.stereoTargetEye == StereoTargetEyeMask.Both) && isCompatWithXRDimension;
+			return isXREnabled && isGameCamera && (camera.stereoTargetEye == StereoTargetEyeMask.Both) && isCompatWithXRDimension;
 		}
 
 		private void UpdateProjectionMatrix()

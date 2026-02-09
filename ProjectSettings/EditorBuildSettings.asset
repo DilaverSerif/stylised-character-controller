@@ -6,9 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 0
-    path: 
-    guid: 00000000000000000000000000000000
-  - enabled: 0
     path: Assets/Scenes/Oscillator Demo.unity
     guid: e231fc1134c7c4f40afd0212edcee055
   - enabled: 1
@@ -16,3 +13,4 @@ EditorBuildSettings:
     guid: 2cda990e2423bbf4892e6590ba056729
   m_configObjects:
     com.unity.input.settings: {fileID: 11400000, guid: 3b635b11bd2bc124bab16ca8e917314d, type: 2}
+  m_UseUCBPForAssetBundles: 0

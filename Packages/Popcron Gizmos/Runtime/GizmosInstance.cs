@@ -202,7 +202,7 @@ namespace Popcron
                 queue[i] = new Element();
             }
 
-            if (GraphicsSettings.renderPipelineAsset == null)
+            if (GraphicsSettings.defaultRenderPipeline == null)
             {
                 Camera.onPostRender += OnRendered;
             }
@@ -214,7 +214,7 @@ namespace Popcron
 
         private void OnDisable()
         {
-            if (GraphicsSettings.renderPipelineAsset == null)
+            if (GraphicsSettings.defaultRenderPipeline == null)
             {
                 Camera.onPostRender -= OnRendered;
             }

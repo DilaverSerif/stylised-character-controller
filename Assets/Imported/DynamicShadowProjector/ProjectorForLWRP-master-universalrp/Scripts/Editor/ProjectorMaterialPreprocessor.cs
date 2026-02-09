@@ -41,7 +41,7 @@ namespace ProjectorForLWRP
 		}
 		public void OnProcessScene(UnityEngine.SceneManagement.Scene scene, BuildReport report)
 		{
-			bool isLWRP = GraphicsSettings.renderPipelineAsset is UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset;
+			bool isLWRP = GraphicsSettings.defaultRenderPipeline is UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset;
 			var rootObjects = scene.GetRootGameObjects();
 			foreach (var rootObj in rootObjects)
 			{

@@ -61,22 +61,22 @@ namespace DynamicShadowProjector.Editor
 					List<string> floatPropertyDisplayNames = new List<string>();
 					foreach (MaterialProperty materialProperty in materialProperties)
 					{
-						if (materialProperty.type == MaterialProperty.PropType.Texture)
+						if (materialProperty.propertyType == UnityEngine.Rendering.ShaderPropertyType.Texture)
 						{
 							m_texturePropertyNames.Add(materialProperty.name);
 							texturePropertyDisplayNames.Add(materialProperty.name + " (" + materialProperty.displayName + ")");
 						}
-						else if (materialProperty.type == MaterialProperty.PropType.Color)
+						else if (materialProperty.propertyType == UnityEngine.Rendering.ShaderPropertyType.Color)
 						{
 							m_colorPropertyNames.Add(materialProperty.name);
 							colorPropertyDisplayNames.Add(materialProperty.name + " (" + materialProperty.displayName + ")");
 						}
-						else if (materialProperty.type == MaterialProperty.PropType.Range)
+						else if (materialProperty.propertyType == UnityEngine.Rendering.ShaderPropertyType.Range)
 						{
 							m_rangePropertyNames.Add(materialProperty.name);
 							rangePropertyDisplayNames.Add(materialProperty.name + " (" + materialProperty.displayName + ")");
 						}
-						else if (materialProperty.type == MaterialProperty.PropType.Float)
+						else if (materialProperty.propertyType == UnityEngine.Rendering.ShaderPropertyType.Float)
 						{
 							m_floatPropertyNames.Add(materialProperty.name);
 							floatPropertyDisplayNames.Add(materialProperty.name + " (" + materialProperty.displayName + ")");

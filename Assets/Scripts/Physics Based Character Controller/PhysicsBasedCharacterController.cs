@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
+using UnityEngine.Events;
 
 /// <summary>
 /// A floating-capsule oriented physics based character controller. Based on the approach devised by Toyful Games for Very Very Valet.
@@ -12,13 +12,9 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     private Vector3 _gravitationalForce;
     private Vector3 _rayDir = Vector3.down;
     private Vector3 _previousVelocity = Vector3.zero;
-    private Vector2 _moveContext;
-    private ParticleSystem.EmissionModule _emission;
 
     [Header("Other:")]
-    [SerializeField] private bool _adjustInputsToCameraAngle = false;
     [SerializeField] private LayerMask _terrainLayer;
-    [SerializeField] private ParticleSystem _dustParticleSystem;
 
     private bool _shouldMaintainHeight = true;
 
@@ -28,7 +24,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     [SerializeField] public float _rideSpringStrength = 50f; // rideSpringStrength: strength of spring. (?)
     [SerializeField] private float _rideSpringDamper = 5f; // rideSpringDampener: dampener of spring. (?)
     [SerializeField] private Oscillator _squashAndStretchOcillator;
-
 
     private enum lookDirectionOptions { velocity, acceleration, moveInput };
     private Quaternion _uprightTargetRot = Quaternion.identity; // Adjust y value to match the desired direction to face.
@@ -40,7 +35,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     [SerializeField] private lookDirectionOptions _characterLookDirection = lookDirectionOptions.velocity;
     [SerializeField] private float _uprightSpringStrength = 40f;
     [SerializeField] private float _uprightSpringDamper = 5f;
-
 
     private Vector3 _moveInput;
     private float _speedFactor = 1f;
@@ -55,7 +49,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     [SerializeField] private AnimationCurve _accelerationFactorFromDot;
     [SerializeField] private AnimationCurve _maxAccelerationForceFactorFromDot;
     [SerializeField] private Vector3 _moveForceScale = new Vector3(1f, 0f, 1f);
-
 
     private Vector3 _jumpInput;
     private float _timeSinceJumpPressed = 0f;
@@ -72,6 +65,49 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     [SerializeField] private float _jumpBuffer = 0.15f; // Note, jumpBuffer shouldn't really exceed the time of the jump.
     [SerializeField] private float _coyoteTime = 0.25f;
 
+    [Header("Events:")]
+    public UnityEvent OnJump;
+    public UnityEvent OnLand;
+    public UnityEvent OnGrounded;
+    public UnityEvent OnUngrounded;
+    public UnityEvent OnMoveStarted;
+    public UnityEvent OnMoveStopped;
+
+    /// <summary>
+    /// Set the move input for the character.
+    /// </summary>
+    /// <param name="moveInput">The move input vector.</param>
+    public void SetMoveInput(Vector3 moveInput)
+    {
+        bool wasMoving = _moveInput.magnitude != 0;
+        _moveInput = moveInput;
+        bool isMoving = _moveInput.magnitude != 0;
+
+        if (!wasMoving && isMoving)
+        {
+            OnMoveStarted?.Invoke();
+        }
+        else if (wasMoving && !isMoving)
+        {
+            OnMoveStopped?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Set the jump input for the character.
+    /// </summary>
+    /// <param name="jumpInput">The jump input vector (usually (0, 1, 0)).</param>
+    /// <param name="jumpStarted">Whether the jump button was just pressed this frame.</param>
+    public void SetJumpInput(Vector3 jumpInput, bool jumpStarted = false)
+    {
+        _jumpInput = jumpInput;
+
+        if (jumpStarted)
+        {
+            _timeSinceJumpPressed = 0f;
+        }
+    }
+
     /// <summary>
     /// Prepare frequently used variables.
     /// </summary>
@@ -79,12 +115,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     {
         _rb = GetComponent<Rigidbody>();
         _gravitationalForce = Physics.gravity * _rb.mass;
-
-        if (_dustParticleSystem)
-        {
-            _emission = _dustParticleSystem.emission; // Stores the module in a local variable
-            _emission.enabled = false; // Applies the new value directly to the Particle System
-        }
     }
 
     /// <summary>
@@ -118,7 +148,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         Vector3 lookDirection = Vector3.zero;
         if (lookDirectionOption == lookDirectionOptions.velocity || lookDirectionOption == lookDirectionOptions.acceleration)
         {
-            Vector3 velocity = _rb.velocity;
+            Vector3 velocity = _rb.linearVelocity;
             velocity.y = 0f;
             if (lookDirectionOption == lookDirectionOptions.velocity)
             {
@@ -141,17 +171,10 @@ public class PhysicsBasedCharacterController : MonoBehaviour
 
     private bool _prevGrounded = false;
     /// <summary>
-    /// Determines and plays the appropriate character sounds, particle effects, then calls the appropriate methods to move and float the character.
+    /// Determines and triggers events, then calls the appropriate methods to move and float the character.
     /// </summary>
     private void FixedUpdate()
     {
-        _moveInput = new Vector3(_moveContext.x, 0, _moveContext.y);
-
-        if (_adjustInputsToCameraAngle)
-        {
-            _moveInput = AdjustInputToFaceCamera(_moveInput);
-        }
-
         (bool rayHitGround, RaycastHit rayHit) = RaycastToGround();
         SetPlatform(rayHit);
 
@@ -160,33 +183,10 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         {
             if (_prevGrounded == false)
             {
-                if (!FindObjectOfType<AudioManager>().IsPlaying("Land"))
-                {
-                    FindObjectOfType<AudioManager>().Play("Land");
-                }
-
+                OnLand?.Invoke();
             }
 
-            if (_moveInput.magnitude != 0)
-            {
-                if (!FindObjectOfType<AudioManager>().IsPlaying("Walking"))
-                {
-                    FindObjectOfType<AudioManager>().Play("Walking");
-                }
-            }
-            else
-            {
-                FindObjectOfType<AudioManager>().Stop("Walking");
-            }
-
-            if (_dustParticleSystem)
-            {
-                if (_emission.enabled == false)
-                {
-                    _emission.enabled = true; // Applies the new value directly to the Particle System                  
-                }
-            }
-
+            OnGrounded?.Invoke();
             _timeSinceUngrounded = 0f;
 
             if (_timeSinceJump > 0.2f)
@@ -196,14 +196,9 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         }
         else
         {
-            FindObjectOfType<AudioManager>().Stop("Walking");
-
-            if (_dustParticleSystem)
+            if (_prevGrounded == true)
             {
-                if (_emission.enabled == true)
-                {
-                    _emission.enabled = false; // Applies the new value directly to the Particle System
-                }
+                OnUngrounded?.Invoke();
             }
 
             _timeSinceUngrounded += Time.fixedDeltaTime;
@@ -232,7 +227,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         RaycastHit rayHit;
         Ray rayToGround = new Ray(transform.position, _rayDir);
         bool rayHitGround = Physics.Raycast(rayToGround, out rayHit, _rayToGroundLength, _terrainLayer.value);
-        //Debug.DrawRay(transform.position, _rayDir * _rayToGroundLength, Color.blue);
         return (rayHitGround, rayHit);
     }
 
@@ -244,12 +238,12 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     /// <param name="rayHit">Information about the RaycastToGround.</param>
     private void MaintainHeight(RaycastHit rayHit)
     {
-        Vector3 vel = _rb.velocity;
+        Vector3 vel = _rb.linearVelocity;
         Vector3 otherVel = Vector3.zero;
         Rigidbody hitBody = rayHit.rigidbody;
         if (hitBody != null)
         {
-            otherVel = hitBody.velocity;
+            otherVel = hitBody.linearVelocity;
         }
         float rayDirVel = Vector3.Dot(_rayDir, vel);
         float otherDirVel = Vector3.Dot(_rayDir, otherVel);
@@ -261,7 +255,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         Vector3 oscillationForce = springForce * Vector3.down;
         _rb.AddForce(maintainHeightForce);
         _squashAndStretchOcillator.ApplyForce(oscillationForce);
-        //Debug.DrawLine(transform.position, transform.position + (_rayDir * springForce), Color.yellow);
 
         // Apply force to objects beneath
         if (hitBody != null)
@@ -351,41 +344,6 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     }
 
     /// <summary>
-    /// Reads the player movement input.
-    /// </summary>
-    /// <param name="context">The move input's context.</param>
-    public void MoveInputAction(InputAction.CallbackContext context)
-    {
-        _moveContext = context.ReadValue<Vector2>();
-    }
-
-    /// <summary>
-    /// Reads the player jump input.
-    /// </summary>
-    /// <param name="context">The jump input's context.</param>
-    public void JumpInputAction(InputAction.CallbackContext context)
-    {
-        float jumpContext = context.ReadValue<float>();
-        _jumpInput = new Vector3(0, jumpContext, 0);
-
-        if (context.started) // button down
-        {
-            _timeSinceJumpPressed = 0f;
-        }
-    }
-
-    /// <summary>
-    /// Adjusts the input, so that the movement matches input regardless of camera rotation.
-    /// </summary>
-    /// <param name="moveInput">The player movement input.</param>
-    /// <returns>The camera corrected movement input.</returns>
-    private Vector3 AdjustInputToFaceCamera(Vector3 moveInput)
-    {
-        float facing = Camera.main.transform.eulerAngles.y;
-        return (Quaternion.Euler(0, facing, 0) * moveInput);
-    }
-
-    /// <summary>
     /// Set the transform parent to be the result of RaycastToGround.
     /// If the raycast didn't hit, then unset the transform parent.
     /// </summary>
@@ -421,7 +379,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
         _m_GoalVel = Vector3.MoveTowards(_m_GoalVel,
                                         goalVel,
                                         accel * Time.fixedDeltaTime);
-        Vector3 neededAccel = (_m_GoalVel - _rb.velocity) / Time.fixedDeltaTime;
+        Vector3 neededAccel = (_m_GoalVel - _rb.linearVelocity) / Time.fixedDeltaTime;
         float maxAccel = _maxAccelForce * _maxAccelerationForceFactorFromDot.Evaluate(velDot) * _maxAccelForceFactor;
         neededAccel = Vector3.ClampMagnitude(neededAccel, maxAccel);
         _rb.AddForceAtPosition(Vector3.Scale(neededAccel * _rb.mass, _moveForceScale), transform.position + new Vector3(0f, transform.localScale.y * _leanFactor, 0f)); // Using AddForceAtPosition in order to both move the player and cause the play to lean in the direction of input.
@@ -437,7 +395,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
     {
         _timeSinceJumpPressed += Time.fixedDeltaTime;
         _timeSinceJump += Time.fixedDeltaTime;
-        if (_rb.velocity.y < 0)
+        if (_rb.linearVelocity.y < 0)
         {
             _shouldMaintainHeight = true;
             _jumpReady = true;
@@ -447,7 +405,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
                 _rb.AddForce(_gravitationalForce * (_fallGravityFactor - 1f)); // Hmm... this feels a bit weird. I want a reactive jump, but I don't want it to dive all the time...
             }
         }
-        else if (_rb.velocity.y > 0)
+        else if (_rb.linearVelocity.y > 0)
         {
             if (!grounded)
             {
@@ -472,7 +430,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
                     _jumpReady = false;
                     _shouldMaintainHeight = false;
                     _isJumping = true;
-                    _rb.velocity = new Vector3(_rb.velocity.x, 0f, _rb.velocity.z); // Cheat fix... (see comment below when adding force to rigidbody).
+                    _rb.linearVelocity = new Vector3(_rb.linearVelocity.x, 0f, _rb.linearVelocity.z); // Cheat fix... (see comment below when adding force to rigidbody).
                     if (rayHit.distance != 0) // i.e. if the ray has hit
                     {
                         _rb.position = new Vector3(_rb.position.x, _rb.position.y - (rayHit.distance - _rideHeight), _rb.position.z);
@@ -481,7 +439,7 @@ public class PhysicsBasedCharacterController : MonoBehaviour
                     _timeSinceJumpPressed = _jumpBuffer; // So as to not activate further jumps, in the case that the player lands before the jump timer surpasses the buffer.
                     _timeSinceJump = 0f;
 
-                    FindObjectOfType<AudioManager>().Play("Jump");
+                    OnJump?.Invoke();
                 }
             }
         }
